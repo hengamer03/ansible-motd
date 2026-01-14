@@ -1,4 +1,4 @@
-# Hengamer03 Motd
+# Hengamer03 ansible-motd
 
 ![MOTD1 Screenshot](docs/Motd-1)
 
