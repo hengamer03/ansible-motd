@@ -6,10 +6,13 @@ This is a simple MOTD that displays system information whenever you open a new s
 
 ## Key Features
 
-**Colour Coding**: Displays statuses in different colors. Green is good and normal operations. red means its nearly full. 
-**Reboot Detection**: Runs needs-restarting to check if the server should be restarted
-**Container Count**: Shows container count, both Docker & Podman. This option is toggleable and is false by default
-**Health Checks**: Shows both normal systemd errors, but allows you to define custom health checks that will display 
+- **🎨 Color Coding** - Visual status indicators (green = normal, yellow = warning, red = critical)
+- **🔄 Reboot Detection** - Automatically detects when system restart is required after updates
+- **📦 Container Monitoring** - Displays Docker/Podman container counts (optional, disabled by default)
+- **❌ Failed Services** - Shows systemd services that have failed
+- **✅ Custom Health Checks** - Define application-specific checks that display failures
+- **📊 Real-time Metrics** - Collects system info at login time, not deployment time
+- **📝 Ansible Tracking** - Shows when Ansible last ran on the server
 
 ## Requirements
 - **OS**: RHEL or any other RPM based system (Fedora, Rocky & Alma Linux)
@@ -84,6 +87,30 @@ Unlike static MOTD files, this setup runs the status script **every time you log
 **Information Displayed:**
 - Static metadata (from Ansible variables): Environment, datacenter, responsible team, backup config
 - Dynamic metrics (collected at runtime): Load, memory, disk usage, uptime, running containers, failed services
+
+## File Structure
+
+```yml
+.
+├── defaults
+│   └── main.yml
+├── doc
+│   ├── Motd-1 
+│   └── motd-2
+├── README.md
+├── tasks
+│   └── main.yml
+├── templates
+│   ├── motd_status.sh.j2
+│   └── profile_motd.sh.j2
+├── tests
+│   ├── inventory
+│   └── test.yml
+└── vars
+    └── main.yml
+```
+
+
 ## Configuration Variables
 
 Nothing is required to be defined, and the *motd/defaults/main.yml* file defnies some basic values that are possible to change. 
@@ -202,7 +229,8 @@ Based on the screenshot, here's what you'll see:
     ✗ API Health
 ```
 
-** Photo example** 
+**Photo example**
+
 ![MOTD2 Screenshot](docs/motd-2)
 
 ## Troubleshooting
