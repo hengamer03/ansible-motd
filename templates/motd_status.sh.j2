@@ -1,0 +1,324 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+# MOTD Status Script - Collects real-time system metrics  
+# Optimized for RPM-based systems (RHEL/Fedora/Rocky/AlmaLinux)
+set -euo pipefail
+
+# Declare arrays upfront
+declare -a disk_info
+declare -a health_check_failures
+
+# ============================================================================
+# Color Definitions
+# ============================================================================
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+# ============================================================================
+# Threshold Configuration
+# ============================================================================
+MEMORY_WARN_THRESHOLD=75
+MEMORY_CRIT_THRESHOLD=90
+DISK_WARN_THRESHOLD=75
+DISK_CRIT_THRESHOLD=90
+LOAD_WARN_MULTIPLIER=1.5  # Warn if load > cores * 1.5
+LOAD_CRIT_MULTIPLIER=2.0  # Critical if load > cores * 2.0
+
+# ============================================================================
+# Basic System Information
+# ============================================================================
+now="$(date '+%F %T%z')"
+
+# Load averages
+if [[ -r /proc/loadavg ]]; then
+  read -r l1 l5 l15 _ < /proc/loadavg
+else
+  l1="N/A"; l5="N/A"; l15="N/A"
+fi
+
+# CPU cores for load calculation
+cpu_cores=$(grep -c ^processor /proc/cpuinfo 2>/dev/null || echo 1)
+
+# Determine load color
+load_color="$GREEN"
+if [[ "$l1" != "N/A" ]]; then
+  load_warn=$(awk -v cores="$cpu_cores" -v mult="$LOAD_WARN_MULTIPLIER" 'BEGIN{printf "%.2f", cores * mult}')
+  load_crit=$(awk -v cores="$cpu_cores" -v mult="$LOAD_CRIT_MULTIPLIER" 'BEGIN{printf "%.2f", cores * mult}')
+  
+  if (( $(echo "$l1 > $load_crit" | bc -l 2>/dev/null || echo 0) )); then
+    load_color="$RED"
+  elif (( $(echo "$l1 > $load_warn" | bc -l 2>/dev/null || echo 0) )); then
+    load_color="$YELLOW"
+  fi
+fi
+
+# Boot time & uptime
+boot="$(who -b 2>/dev/null | awk '{print $3, $4}' || true)"
+[[ -z "${boot}" ]] && boot="$(uptime -s 2>/dev/null || echo 'N/A')"
+
+upt="$(uptime -p 2>/dev/null | sed 's/^up //' || echo 'N/A')"
+
+# Processes
+procs="$(ps ax 2>/dev/null | wc -l | tr -d ' ' || echo 'N/A')"
+
+# ============================================================================
+# Memory Information with Color Coding
+# ============================================================================
+if command -v free >/dev/null 2>&1; then
+  mem_total=$(free -m | awk '/^Mem:/{print $2}')
+  mem_used=$(free -m | awk '/^Mem:/{print $3}')
+  mem_pct=$(( mem_total > 0 ? (mem_used*100/mem_total) : 0 ))
+
+  swap_total=$(free -m | awk '/^Swap:/{print $2}')
+  swap_used=$(free -m | awk '/^Swap:/{print $3}')
+  swap_pct=$(( swap_total > 0 ? (swap_used*100/swap_total) : 0 ))
+
+  hum_mem_used="$(awk -v m="$mem_used" 'BEGIN{printf "%.1fG", m/1024}')"
+  hum_mem_total="$(awk -v m="$mem_total" 'BEGIN{printf "%.1fG", m/1024}')"
+  hum_swap_used="$(awk -v m="$swap_used" 'BEGIN{printf "%.1fG", m/1024}')"
+  hum_swap_total="$(awk -v m="$swap_total" 'BEGIN{printf "%.1fG", m/1024}')"
+  
+  # Determine memory color
+  mem_color="$GREEN"
+  if [[ $mem_pct -ge $MEMORY_CRIT_THRESHOLD ]]; then
+    mem_color="$RED"
+  elif [[ $mem_pct -ge $MEMORY_WARN_THRESHOLD ]]; then
+    mem_color="$YELLOW"
+  fi
+  
+  # Determine swap color
+  swap_color="$GREEN"
+  if [[ $swap_pct -ge $MEMORY_CRIT_THRESHOLD ]]; then
+    swap_color="$RED"
+  elif [[ $swap_pct -ge $MEMORY_WARN_THRESHOLD ]]; then
+    swap_color="$YELLOW"
+  fi
+else
+  hum_mem_used="N/A"; hum_mem_total="N/A"; mem_pct=0; mem_color="$NC"
+  hum_swap_used="N/A"; hum_swap_total="N/A"; swap_pct=0; swap_color="$NC"
+fi
+
+# Users
+users="$(who 2>/dev/null | wc -l | tr -d ' ' || echo '0')"
+
+# ============================================================================
+# Service Errors (journalctl - last hour)
+# ============================================================================
+if command -v journalctl >/dev/null 2>&1; then
+  svc_errors="$(journalctl -p err -S -1h --no-pager 2>/dev/null | grep -cE '^\w' | tr -d '\n' || echo 0)"
+  svc_errors_color="$GREEN"
+  if [[ $svc_errors -gt 10 ]]; then
+    svc_errors_color="$RED"
+  elif [[ $svc_errors -gt 0 ]]; then
+    svc_errors_color="$YELLOW"
+  fi
+else
+  svc_errors="N/A"
+  svc_errors_color="$NC"
+fi
+
+# ============================================================================
+# Failed Systemd Services
+# ============================================================================
+failed_services=""
+failed_count=0
+if command -v systemctl >/dev/null 2>&1; then
+  # Count lines that start with ● (failed service indicator)
+  failed_count=$(systemctl list-units --failed --no-legend --no-pager 2>/dev/null | grep -c '^●' || echo 0)
+  if [[ $failed_count -gt 0 ]]; then
+    # Extract service names (first field after the ● symbol)
+    failed_services=$(systemctl list-units --failed --no-legend --no-pager 2>/dev/null | grep '^●' | awk '{print $2}' | head -5 | tr '\n' ' ')
+  fi
+fi
+
+# ============================================================================
+# Disk Usage with Color Coding
+# ============================================================================
+
+disk_line() {
+  local mnt="$1"
+  if df -hP "$mnt" >/dev/null 2>&1; then
+    local fs size used avail pct_raw mount
+    read -r fs size used avail pct_raw mount <<<"$(df -hP "$mnt" 2>/dev/null | awk 'NR==2 {print $1, $2, $3, $4, $5, $6}')"
+    
+    if [[ -n "$mount" ]]; then
+      # Extract percentage number
+      local pct_num="${pct_raw%\%}"
+      
+      # Determine color
+      local disk_color="$GREEN"
+      if [[ $pct_num -ge $DISK_CRIT_THRESHOLD ]]; then
+        disk_color="$RED"
+      elif [[ $pct_num -ge $DISK_WARN_THRESHOLD ]]; then
+        disk_color="$YELLOW"
+      fi
+      
+      # Store the complete formatted line as a single string
+      disk_info+=("$(printf "${disk_color}          %-9s %-7s/%-6s %-6s${NC}" "$mount" "$used" "$size" "($pct_raw)")")
+    fi
+  fi
+}
+
+disk_line /
+# Only check these if they exist as separate mounts
+if mountpoint -q /var/log 2>/dev/null; then
+  disk_line /var/log
+fi
+if mountpoint -q /tmp 2>/dev/null; then
+  disk_line /tmp
+fi
+if mountpoint -q /home 2>/dev/null; then
+  disk_line /home
+fi
+
+# ============================================================================
+# Reboot Required Detection (RHEL/Fedora)
+# ============================================================================
+reboot_required=false
+reboot_reason=""
+
+# Check if needs-restarting is available (from yum-utils or dnf-utils)
+if command -v needs-restarting >/dev/null 2>&1; then
+  # Check if reboot is needed (exit code 1 means reboot needed)
+  if ! needs-restarting -r >/dev/null 2>&1; then
+    reboot_required=true
+    reboot_reason="Kernel or core libraries updated"
+  fi
+fi
+
+# Alternative: Check if running kernel differs from installed kernel
+running_kernel=$(uname -r)
+installed_kernel=$(rpm -q kernel --last 2>/dev/null | head -n1 | awk '{print $1}' | sed 's/kernel-//')
+if [[ -n "$installed_kernel" ]] && [[ "$running_kernel" != "$installed_kernel" ]]; then
+  reboot_required=true
+  reboot_reason="New kernel installed: $installed_kernel (running: $running_kernel)"
+fi
+
+# ============================================================================
+# Docker/Podman Container Count
+# ============================================================================
+container_info=""
+containers_running=0
+containers_total=0
+
+# Check Podman first (preferred on RHEL 8+)
+if command -v podman >/dev/null 2>&1; then
+  containers_running=$(podman ps -q 2>/dev/null | wc -l || echo 0)
+  containers_total=$(podman ps -aq 2>/dev/null | wc -l || echo 0)
+  if [[ $containers_total -gt 0 ]]; then
+    container_info="Podman: ${GREEN}${containers_running}${NC}/${containers_total} running"
+  fi
+# Fall back to Docker
+elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  containers_running=$(docker ps -q 2>/dev/null | wc -l || echo 0)
+  containers_total=$(docker ps -aq 2>/dev/null | wc -l || echo 0)
+  if [[ $containers_total -gt 0 ]]; then
+    container_info="Docker: ${GREEN}${containers_running}${NC}/${containers_total} running"
+  fi
+fi
+
+# ============================================================================
+# Last Ansible Run
+# ============================================================================
+ansible_last_run=""
+ansible_last_run_color="$NC"
+if [[ -f /var/run/ansible-last-run ]]; then
+  last_run_iso=$(cat /var/run/ansible-last-run 2>/dev/null || echo "")
+  if [[ -n "$last_run_iso" ]]; then
+    last_run_epoch=$(date -d "$last_run_iso" +%s 2>/dev/null || echo 0)
+    now_epoch=$(date +%s)
+    days_ago=$(( (now_epoch - last_run_epoch) / 86400 ))
+    hours_ago=$(( ((now_epoch - last_run_epoch) % 86400) / 3600 ))
+    
+    if [[ $days_ago -gt 0 ]]; then
+      ansible_last_run="${days_ago}d ${hours_ago}h ago"
+    else
+      ansible_last_run="${hours_ago}h ago"
+    fi
+    
+    # Color coding based on age
+    if [[ $days_ago -gt 14 ]]; then
+      ansible_last_run_color="$RED"
+    elif [[ $days_ago -gt 7 ]]; then
+      ansible_last_run_color="$YELLOW"
+    else
+      ansible_last_run_color="$GREEN"
+    fi
+  fi
+fi
+
+# ============================================================================
+# Custom Application Health Checks
+# ============================================================================
+
+{% if motd_health_checks is defined and motd_health_checks | length > 0 %}
+{% for check in motd_health_checks %}
+# Check: {{ check.name }}
+if ! {{ check.check }} >/dev/null 2>&1; then
+  health_check_failures+=("{{ check.name }}")
+fi
+{% endfor %}
+{% endif %}
+
+# ============================================================================
+# Display System Status
+# ============================================================================
+echo -e "${BOLD}${CYAN}  System status $now${NC}"
+printf "  %-7s ${load_color}%-18s${NC} %-7s %-20s\n" "Load:" "$l1 $l5 $l15" "Boot:" "${boot:-N/A}"
+printf "  %-7s %-18s %-7s %-20s\n" "Procs:" "$procs" "Uptime:" "${upt:-N/A}"
+printf "  %-7s ${mem_color}%-18s${NC} %-7s %-20s\n" "Memory:" "$hum_mem_used/$hum_mem_total (${mem_pct}%)" "Users:" "$users"
+printf "  %-7s ${swap_color}%-18s${NC} %-7s ${svc_errors_color}%-20s${NC}\n" "Swap:" "$hum_swap_used/$hum_swap_total (${swap_pct}%)" "Errors:" "$svc_errors"
+
+# Disk information
+echo -e "  ${BOLD}Disk:${NC}"
+for info in "${disk_info[@]}"; do
+  echo -e "$info"
+done
+
+# ============================================================================
+# Display Warnings and Alerts
+# ============================================================================
+echo ""
+
+# Failed Services
+if [[ $failed_count -gt 0 ]]; then
+  echo -e "  ${RED}${BOLD}⚠ FAILED SERVICES: $failed_count${NC}"
+  echo -e "  ${RED}Services: $failed_services${NC}"
+  echo ""
+fi
+
+# Reboot Required
+if [[ "$reboot_required" == "true" ]]; then
+  echo -e "  ${RED}${BOLD}⚠ SYSTEM REBOOT REQUIRED${NC}"
+  echo -e "  ${YELLOW}Reason: $reboot_reason${NC}"
+  echo ""
+fi
+
+# Container Information
+if [[ -n "$container_info" ]]; then
+  echo -e "  $container_info"
+fi
+
+# Ansible Last Run
+if [[ -n "$ansible_last_run" ]]; then
+  echo -e "  Ansible: ${ansible_last_run_color}Last run $ansible_last_run${NC}"
+fi
+
+# Custom Health Check Failures
+set +u  # Temporarily allow unset variables for empty array check
+if [[ ${{ '{#' }}health_check_failures[@]} -gt 0 ]]; then
+  set -u  # Re-enable unset variable checking
+  echo ""
+  echo -e "  ${RED}${BOLD}⚠ HEALTH CHECK FAILURES:${NC}"
+  for failure in "${health_check_failures[@]}"; do
+    echo -e "  ${RED}  ✗ $failure${NC}"
+  done
+fi
+set -u  # Ensure it's re-enabled even if condition was false
+
+echo ""

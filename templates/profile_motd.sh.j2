@@ -1,0 +1,60 @@
+# {{ ansible_managed }}
+# Print MOTD for interactive SSH sessions, once per login shell
+
+# Only run for interactive shells
+case "$-" in
+  *i*) : ;;
+  *) return ;;
+esac
+
+# Only for SSH sessions
+if [ -z "${SSH_TTY:-}" ] && [ -z "${SSH_CONNECTION:-}" ]; then
+  return
+fi
+
+# Avoid reprinting in nested shells
+if [ -n "${__PRINTED_MOTD:-}" ]; then
+  return
+fi
+export __PRINTED_MOTD=1
+
+# Banner + metadata
+{% if motd_show_cowsay %}
+if command -v cowsay >/dev/null 2>&1; then
+  cowsay "  {{ motd_banner_top }}  " | sed 's/^/  /'
+else
+{% endif %}
+  cat <<'ASCII'
+   _________________________
+  <  {{ motd_banner_top }}  >
+   -------------------------
+         \  ^__^  /
+          \ (oo) /
+
+           /    \
+          /      \
+ASCII
+{% if motd_show_cowsay %}
+fi
+{% endif %}
+
+# Gather network info
+fqdn="$(hostname -f 2>/dev/null || hostname)"
+ip="$(ip -o -4 addr show scope global 2>/dev/null | awk '{print $4}' | head -n1 | cut -d/ -f1 || echo 'N/A')"
+subnet="$(ip -o -4 addr show scope global 2>/dev/null | awk '{print $4}' | head -n1 || echo 'N/A')"
+
+printf "\n"
+printf "  %-10s %-25s %-12s %-20s\n" "Navn:" "$fqdn" "Subnett:" "$subnet"
+printf "  %-10s %-25s %-12s %-20s\n" "IP:" "$ip" "Status:" "{{ motd_status }}"
+printf "  %-10s %-25s %-12s %-20s\n" "Datasenter:" "{{ motd_datacenter | default('N/A') }}" "Ansvarlig:" "{{ motd_ansvarlig | default('N/A') }}"
+printf "  %-10s %-25s %-12s %-20s\n" "Miljø:" "{{ motd_env | default('N/A') }}" "Driftsteam:" "{{ motd_driftsteam | default('N/A') }}"
+printf "  %-10s %-25s\n" "Backup:" "{{ motd_backup }}"
+printf "\n"
+
+# Dynamic status
+if [[ -x "{{ motd_script_path }}" ]]; then
+  "{{ motd_script_path }}"
+else
+  echo "  Warning: MOTD status script not found or not executable"
+  echo "  Expected at: {{ motd_script_path }}"
+fi

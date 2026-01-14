@@ -1,0 +1,111 @@
+---
+# defaults file for motd
+
+# ============================================================================
+# Server Identification (customize these per environment/host)
+# ============================================================================
+
+# Environment name (e.g., "Production", "Staging", "Development")
+motd_env: null
+
+# Datacenter or region (e.g., "Oslo-DC1", "AWS us-east-1")
+motd_datacenter: null
+
+# Server status (e.g., "Aktiv", "Maintenance", "Decommissioned")
+motd_status: "Aktiv"
+
+# Person or team responsible for this server
+motd_ansvarlig: null
+
+# Operations team managing this server
+motd_driftsteam: null
+
+# Backup status (e.g., "Ja", "Nei", "Daily", "Weekly")
+motd_backup: "Nei"
+
+# ============================================================================
+# Installation Paths
+# ============================================================================
+
+# Path where the MOTD script will be installed
+motd_script_path: "/usr/local/bin/motd-status"
+
+# Directory for update-motd.d scripts (not commonly used on RHEL)
+motd_update_motd_dir: "/etc/update-motd.d"
+
+# Profile.d snippet that executes MOTD on login
+motd_profile_snippet: "/etc/profile.d/00-motd.sh"
+
+# Ansible last run tracking file
+motd_ansible_timestamp_file: "/var/run/ansible-last-run"
+
+# ============================================================================
+# Display Options
+# ============================================================================
+
+# Banner text shown at the top of the MOTD
+motd_banner_top: "Velkommen til {{ motd_env | default('Server') }}"
+
+# Use cowsay for banner if available (requires cowsay package)
+motd_show_cowsay: true
+
+# ============================================================================
+# Color Coding Thresholds
+# ============================================================================
+
+# Memory usage thresholds (percentage)
+motd_memory_warn_threshold: 75
+motd_memory_crit_threshold: 90
+
+# Disk usage thresholds (percentage)
+motd_disk_warn_threshold: 75
+motd_disk_crit_threshold: 90
+
+# Load average multipliers (compared to CPU cores)
+motd_load_warn_multiplier: 1.5
+motd_load_crit_multiplier: 2.0
+
+# ============================================================================
+# Custom Application Health Checks
+# ============================================================================
+
+# Define custom health checks for your applications
+# Each check should have a 'name' and a 'check' command
+# The check command should exit 0 for success, non-zero for failure
+#
+# Examples:
+# motd_health_checks:
+#   - name: "Web Server"
+#     check: "systemctl is-active httpd"
+#   - name: "Database"
+#     check: "systemctl is-active postgresql"
+#   - name: "Redis Cache"
+#     check: "systemctl is-active redis"
+#   - name: "Application Port"
+#     check: "ss -tuln | grep -q ':8080'"
+#   - name: "Custom Script"
+#     check: "/usr/local/bin/check-app-health.sh"
+
+motd_health_checks: []
+  # - name: "Example Service"
+  #   check: "systemctl is-active example.service"
+
+# ============================================================================
+# Package Management
+# ============================================================================
+
+# Install yum-utils/dnf-utils for reboot detection (needs-restarting command)
+motd_install_reboot_tools: true
+
+# Install container tools (podman-docker for compatibility)
+motd_install_container_tools: false
+
+# ============================================================================
+# Advanced Options
+# ============================================================================
+
+# Update the Ansible timestamp file on each run
+motd_track_ansible_runs: true
+
+# Disable default system MOTD (not common on RHEL, but available)
+motd_disable_default_scripts: false

@@ -1,0 +1,90 @@
+---
+# tasks file for motd
+
+- name: Ensure required packages are installed
+  ansible.builtin.package:
+    name:
+      - bash
+      - coreutils
+      - procps-ng
+      - util-linux
+      - iproute
+      - gawk
+      - sed
+      - grep
+      - bc  # For floating point calculations in load average
+    state: present
+  become: true
+
+- name: Install yum-utils/dnf-utils for reboot detection (needs-restarting)
+  ansible.builtin.package:
+    name: "{{ 'dnf-utils' if ansible_distribution_major_version|int >= 8 else 'yum-utils' }}"
+    state: present
+  become: true
+  when: motd_install_reboot_tools | bool
+
+- name: Try to install cowsay if requested
+  ansible.builtin.package:
+    name: cowsay
+    state: present
+  become: true
+  when: motd_show_cowsay | bool
+  ignore_errors: true  # OK if repo lacks cowsay (EPEL required)
+
+- name: Install container tools if requested
+  ansible.builtin.package:
+    name:
+      - podman
+      - podman-docker  # Docker compatibility
+    state: present
+  become: true
+  when: motd_install_container_tools | bool
+  ignore_errors: true
+
+- name: Deploy dynamic MOTD status script
+  ansible.builtin.template:
+    src: motd_status.sh.j2
+    dest: "{{ motd_script_path }}"
+    mode: '0755'
+    owner: root
+    group: root
+  become: true
+
+- name: Install profile.d wrapper (executes on SSH interactive shells)
+  ansible.builtin.template:
+    src: profile_motd.sh.j2
+    dest: "{{ motd_profile_snippet }}"
+    mode: '0644'
+    owner: root
+    group: root
+  become: true
+
+- name: Create directory for Ansible timestamp if needed
+  ansible.builtin.file:
+    path: "{{ motd_ansible_timestamp_file | dirname }}"
+    state: directory
+    mode: '0755'
+  become: true
+  when: motd_track_ansible_runs | bool
+
+- name: Update Ansible last run timestamp
+  ansible.builtin.copy:
+    content: "{{ ansible_date_time.iso8601 }}"
+    dest: "{{ motd_ansible_timestamp_file }}"
+    mode: '0644'
+    owner: root
+    group: root
+  become: true
+  when: motd_track_ansible_runs | bool
+
+- name: Test MOTD script execution
+  ansible.builtin.command: "{{ motd_script_path }}"
+  become: true
+  changed_when: false
+  register: motd_test
+  failed_when: motd_test.rc != 0
+
+- name: Display MOTD test output
+  ansible.builtin.debug:
+    msg: "{{ motd_test.stdout_lines }}"
+  when: motd_test is defined and ansible_verbosity >= 1
