@@ -2,7 +2,7 @@
 
 ![MOTD1 Screenshot](docs/Motd-1)
 
-This is a simple MOTD that displays system information whenever you open a new shell towards it. 
+A dynamic MOTD system that displays fresh system information every time you open a new shell session.
 
 ## Key Features
 
@@ -15,13 +15,13 @@ This is a simple MOTD that displays system information whenever you open a new s
 - **📝 Ansible Tracking** - Shows when Ansible last ran on the server
 
 ## Requirements
-- **OS**: RHEL or any other RPM based system (Fedora, Rocky & Alma Linux)
-- **Ansible Version**: Developed and tested using Ansible Core 2.14.18. Unsure if newer or older versions work
+- **OS**: RHEL or any RPM-based distribution (Fedora, Rocky Linux, AlmaLinux)
+- **Ansible Version**: Tested on Ansible Core 2.14.18. Other versions may work but are not guaranteed.
 - **Required Packages**: The role installs all required packages on the remote host.
 
 ## Quickstart
 
-The role primarily works on variable defined in *motd/defaults/main.yml* This makes it customizable to fit most ansible environments. The examples below will show how a *inventory/group_vars/all.yml* could look, and defines a basic setup.
+The role primarily works on variables are defined in `motd/defaults/main.yml` This makes it customizable to fit most ansible environments. The examples below will show how a `inventory/group_vars/all.yml` could look, and defines a basic setup.
 
 ```yml
 
@@ -54,7 +54,7 @@ motd_health_checks:
   - name: "Application Port"
     check: "ss -tuln | grep -q ':8080'"
 
-## Adjustable Thesholds
+## Adjustable Thresholds
 
 motd_memory_warn_threshold: 75
 motd_memory_crit_threshold: 90
@@ -94,7 +94,7 @@ Unlike static MOTD files, this setup runs the status script **every time you log
 .
 ├── defaults
 │   └── main.yml
-├── doc
+├── docs
 │   ├── Motd-1 
 │   └── motd-2
 ├── README.md
@@ -103,9 +103,6 @@ Unlike static MOTD files, this setup runs the status script **every time you log
 ├── templates
 │   ├── motd_status.sh.j2
 │   └── profile_motd.sh.j2
-├── tests
-│   ├── inventory
-│   └── test.yml
 └── vars
     └── main.yml
 ```
@@ -113,7 +110,7 @@ Unlike static MOTD files, this setup runs the status script **every time you log
 
 ## Configuration Variables
 
-Nothing is required to be defined, and the *motd/defaults/main.yml* file defnies some basic values that are possible to change. 
+All variables are optional. The file `motd/defaults/main.yml` provides sensible defaults that you can override as needed.
 
 ### Server Identification
 - ```motd_env``` : Display the environment the server is in. Dev, Test, QA, Production or whatever value you like
@@ -159,9 +156,11 @@ motd_health_checks:
 ```
 
 **Note:** Health checks execute every time you log in, so keep them fast (< 1 second).
+
 ### Adjustable Thresholds
 
-Adjustable thresholds allow you to define how much system usage is required before it gives a warning. allows you to be more lenient in dev / test environments and more strict in production environments
+These thresholds let you choose when warnings appear. You can be more lenient in development environments and more strict in production.
+
 
 ```yml
 ## Memory Checks
@@ -175,7 +174,7 @@ motd_disk_crit_threshold: 90
 
 ### Optional packages
 
-The Role can display if a server needs rebooting, or display containers. these are optional and can be turned off
+The role can display if a server needs rebooting, or display containers. these are optional and can be turned off
 
 ```yml
 motd_install_reboot_tools: true
