@@ -1,0 +1,31 @@
+---
+galaxy_info:
+  author: hengamer03
+  description: Dynamic MOTD for RPM-based systems with real-time metrics and health checks
+  company:
+  
+  license: MIT
+  
+  min_ansible_version: "2.9"
+  
+  # Platforms this role works on
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+        - "10"
+    - name: Fedora
+      versions:
+        - "43"
+        - "42"
+        - "41"
+  
+  galaxy_tags:
+    - system
+    - monitoring
+    - motd
+    - rhel
+    - rpm
+
+dependencies: []
