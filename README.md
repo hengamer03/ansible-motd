@@ -21,8 +21,24 @@ A dynamic MOTD system that displays fresh system information every time you open
 
 ## Quickstart
 
-The role primarily works on variables are defined in `motd/defaults/main.yml` This makes it customizable to fit most ansible environments. The examples below will show how a `inventory/group_vars/all.yml` could look, and defines a basic setup.
+For easy installation download from ansible-galaxy: https://galaxy.ansible.com/ui/standalone/roles/hengamer03/ansible-motd/install/
 
+the role primarily works on variables are defined in `motd/defaults/main.yml` This makes it customizable to fit most ansible environments. The examples below will show how a basic playbook or group_vars file could look, and defines a basic setup.
+
+**Playbook Example**
+
+```yaml
+- hosts: all
+  become: true
+  roles:
+    - role: hengamer03.ansible_motd
+      vars:
+        motd_env: "Production"
+        motd_datacenter: "Oslo-DC1"
+        motd_responsible: "ops@example.com"
+        motd_ops_team: "Infrastructure Team"
+```
+**Group_vars Example**
 ```yml
 
 ## Server Identification
@@ -72,7 +88,7 @@ Run this role on any playbook by including the role
 ```yml
 - hosts: all
   roles:
-    - role: motd # make sure that ansible.cfg knows where to find its roles
+    - role: hengamer03.ansible-motd # make sure that ansible.cfg knows where to find its roles
 ```
 
 ## How It Works
